@@ -32,3 +32,7 @@ Chain CSVs need: `expiry, strike, kind, bid, ask, volume, open_interest` (`load_
 - Yahoo gives live chains only and quotes are delayed or stale, so treat live output as a prototype. Backtest quality depends on your own snapshots or a paid source (ORATS, OptionMetrics).
 - The Russell 2000 constituent list is not included; supply it (FTSE Russell or CRSP point-in-time to avoid survivorship bias).
 - Expect small-cap spreads to eat most apparent edge; the `min_edge_ratio`, spread and open-interest filters exist for that reason.
+
+### Automation
+`python -m optscreen daily --universe universe.txt` snapshots every ticker, screens it, writes `reports/DATE_flagged.csv`, and runs the backtest once there are at least two snapshot days.
+`.github/workflows/daily.yml` runs it every weekday after the close and stores history on a `data` branch. Put the full Russell 2000 list in `universe.txt` (the committed file only has IWM as a placeholder). The workflow file must be on the default branch to run on schedule.

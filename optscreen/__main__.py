@@ -20,6 +20,41 @@ def tickers_from(args) -> list[str]:
     return [t.upper() for t in args.tickers]
 
 
+def daily(a):
+    """Snapshot every ticker, screen it, write reports/DATE.csv, backtest if possible."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    tickers = [t.strip().upper() for t in Path(a.universe).read_text().split() if t.strip()]
+
+    def work(t):
+        try:
+            chain, u = fetch_yfinance(t, a.r, a.max_expiries)
+            save_snapshot(chain, u, a.root)
+            return screen_chain(chain, u, Filters())
+        except Exception as e:  # one bad ticker must not kill the run
+            print(f"skip {t}: {e}")
+            return None
+
+    with ThreadPoolExecutor(a.workers) as ex:
+        frames = [f for f in ex.map(work, tickers) if f is not None and not f.empty]
+    if not frames:
+        return print("nothing screened")
+    res = pd.concat(frames, ignore_index=True)
+    Path(a.reports).mkdir(parents=True, exist_ok=True)
+    day = pd.Timestamp.today().strftime("%Y-%m-%d")
+    flagged = res[res["flagged"]].sort_values("score", ascending=False)
+    flagged[SHOW + ["spot"]].to_csv(f"{a.reports}/{day}_flagged.csv", index=False)
+    print(f"{len(tickers)} tickers, {len(res)} liquid puts, {len(flagged)} flagged")
+    print(flagged[SHOW].head(15).to_string(index=False, float_format=lambda x: f"{x:.3f}"))
+    if len(list(Path(a.root).glob("*"))) > 1:
+        picks = screen_snapshots(a.root)
+        real = realize_returns(picks, a.root, a.horizon)
+        if not real.empty:
+            summary = evaluate(real)
+            print("backtest:", summary)
+            pd.Series(summary).astype(str).to_csv(f"{a.reports}/{day}_backtest.csv")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="optscreen")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -32,10 +67,21 @@ def main(argv=None):
     sub.choices["screen"].add_argument("--csv", help="screen a chain CSV instead of Yahoo")
     sub.choices["screen"].add_argument("--spot", type=float)
     sub.choices["screen"].add_argument("--top", type=int, default=20)
+    d = sub.add_parser("daily", help="snapshot + screen + report (+ backtest if history exists)")
+    d.add_argument("--universe", required=True)
+    d.add_argument("--r", type=float, default=0.04)
+    d.add_argument("--max-expiries", type=int, default=6)
+    d.add_argument("--root", default="data/snapshots")
+    d.add_argument("--reports", default="reports")
+    d.add_argument("--horizon", type=int, default=10)
+    d.add_argument("--workers", type=int, default=8)
     b = sub.add_parser("backtest")
     b.add_argument("--root", default="data/snapshots")
     b.add_argument("--horizon", type=int, default=10)
     a = ap.parse_args(argv)
+
+    if a.cmd == "daily":
+        return daily(a)
 
     if a.cmd == "backtest":
         res = screen_snapshots(a.root)

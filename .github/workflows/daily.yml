@@ -1,0 +1,31 @@
+name: daily-optscreen
+on:
+  schedule:
+    - cron: "30 21 * * 1-5"   # ~4:30pm New York after close, weekdays (UTC)
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -r requirements.txt
+      - run: python -m pytest -q
+      # history lives on a separate branch so main stays code-only
+      - name: restore history
+        run: |
+          git fetch origin data || true
+          git checkout origin/data -- data reports 2>/dev/null || true
+      - run: python -m optscreen daily --universe universe.txt
+      - name: save history
+        run: |
+          git config user.name "optscreen-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git checkout --orphan data-tmp
+          git rm -rf --cached . >/dev/null 2>&1 || true
+          git add -f data reports
+          git commit -m "snapshots $(date -u +%F)"
+          git push -f origin data-tmp:data
