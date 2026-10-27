@@ -19,3 +19,9 @@ def test_labels():
 
 def test_short_text():
     assert analyze("Too short.").score == 0.0
+
+def test_model_scorer_runs_if_installed():
+    import pytest
+    from ai_detector import ml
+    if not ml.available():
+        pytest.skip("torch/transformers not installed")

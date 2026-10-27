@@ -1,0 +1,196 @@
+<title>Provenance AI Detector</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: sticky-free two-pane workbench. Input left, verdict + evidence right; stacks under 880px. */
+:root{
+  --bg:#eceff1; --panel:#f8f9fa; --ink:#14202b; --muted:#5b6a77; --line:#cfd6dc;
+  --hot:#e8590c; --ok:#2b8a3e; --mid:#d9930d; --bad:#c92a2a; --track:#dfe4e8;
+  --font:'Instrument Sans',system-ui,sans-serif; --mono:'JetBrains Mono',ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0e151b; --panel:#162029; --ink:#e6ecf1; --muted:#8fa0ae; --line:#27343f;
+  --hot:#ff8a3d; --ok:#51cf66; --mid:#fcc419; --bad:#ff6b6b; --track:#22303b; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e151b; --panel:#162029; --ink:#e6ecf1; --muted:#8fa0ae; --line:#27343f;
+  --hot:#ff8a3d; --ok:#51cf66; --mid:#fcc419; --bad:#ff6b6b; --track:#22303b; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:15px/1.55 var(--font);
+  padding-block:20px 40px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1180px;margin:0 auto;display:grid;gap:16px}
+header{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+h1{font-size:22px;margin:0;letter-spacing:-.01em}
+h1 span{color:var(--hot)}
+.engine{font:12px var(--mono);color:var(--muted);border:1px solid var(--line);padding:3px 9px;border-radius:99px}
+main{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:16px;align-items:start}
+@media(max-width:880px){main{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;min-width:0}
+h2{font:600 11px var(--font);text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin:0 0 10px}
+textarea{width:100%;height:340px;resize:vertical;background:var(--bg);color:var(--ink);border:1px solid var(--line);
+  border-radius:8px;padding:12px;font:15px/1.6 var(--font)}
+textarea:focus-visible,button:focus-visible{outline:2px solid var(--hot);outline-offset:2px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
+button{font:500 14px var(--font);padding:8px 14px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer}
+button.primary{background:var(--hot);border-color:var(--hot);color:#fff;font-weight:600}
+button:hover{filter:brightness(.96)}
+.count{margin-left:auto;font:12px var(--mono);color:var(--muted)}
+.verdict{display:grid;grid-template-columns:auto minmax(0,1fr);gap:18px;align-items:center}
+@media(max-width:480px){.verdict{grid-template-columns:minmax(0,1fr);justify-items:center;text-align:center}}
+.gauge{width:200px;max-width:100%}
+.big{font:600 40px/1 var(--mono);letter-spacing:-.03em}
+.label{font-size:18px;font-weight:600;margin-top:4px}
+.sub{color:var(--muted);font-size:13px;margin-top:6px}
+.sig{display:grid;gap:10px}
+.sig div.r{display:grid;grid-template-columns:minmax(0,170px) minmax(0,1fr) 38px;gap:10px;align-items:center;font-size:13px}
+.sig .tr{height:8px;border-radius:4px;background:var(--track);overflow:hidden}
+.sig .tr i{display:block;height:100%;background:var(--hot);border-radius:4px}
+.sig .v{font:12px var(--mono);color:var(--muted);text-align:right}
+@media(max-width:480px){.sig div.r{grid-template-columns:minmax(0,1fr) 38px}.sig .tr{grid-column:1/3;order:3}}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.chip{font:12px var(--mono);border:1px solid var(--line);border-radius:6px;padding:3px 8px;color:var(--muted)}
+.chip b{color:var(--ink);font-weight:500}
+.strip{display:flex;gap:2px;height:22px;margin-bottom:12px}
+.strip i{flex:1;min-width:2px;border-radius:2px;background:color-mix(in srgb,var(--hot) calc(var(--a)*100%),var(--track))}
+.hl{line-height:1.9}
+.hl span{background:color-mix(in srgb,var(--hot) calc(var(--a)*60%),transparent);border-radius:3px;padding:1px 0;box-decoration-break:clone}
+.legend{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);margin-bottom:10px}
+.legend i{display:block;width:90px;height:8px;border-radius:4px;background:linear-gradient(90deg,var(--track),var(--hot))}
+.note{font-size:12px;color:var(--muted);max-width:90ch}
+.empty{color:var(--muted)}
+</style>
+<div class="wrap">
+  <header>
+    <h1>Provenance <span>AI Detector</span></h1>
+    <span class="engine" id="engine">loading…</span>
+  </header>
+  <main>
+    <section class="panel">
+      <h2>Text to check</h2>
+      <textarea id="in" aria-label="Text to analyze" placeholder="Paste at least 40 words…"></textarea>
+      <div class="row">
+        <button class="primary" id="go">Analyze</button>
+        <button id="s1">Load AI-style sample</button>
+        <button id="s2">Load human sample</button>
+        <span class="count" id="count">0 words</span>
+      </div>
+    </section>
+    <section class="grid" style="display:grid;gap:16px;min-width:0">
+      <div class="panel">
+        <h2>Verdict</h2>
+        <div class="verdict">
+          <svg class="gauge" viewBox="0 0 200 118" role="img" aria-label="AI likelihood gauge">
+            <path d="M20 100 A80 80 0 0 1 180 100" fill="none" stroke="var(--track)" stroke-width="16" stroke-linecap="round"/>
+            <path id="arc" d="M20 100 A80 80 0 0 1 180 100" fill="none" stroke="var(--ok)" stroke-width="16" stroke-linecap="round" pathLength="100" stroke-dasharray="0 100"/>
+            <text x="100" y="98" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="34" font-weight="600" fill="var(--ink)" id="gnum">–</text>
+            <text x="20" y="116" text-anchor="middle" font-size="10" fill="var(--muted)" font-family="JetBrains Mono,monospace">0</text>
+            <text x="180" y="116" text-anchor="middle" font-size="10" fill="var(--muted)" font-family="JetBrains Mono,monospace">100</text>
+          </svg>
+          <div>
+            <div class="label" id="label">–</div>
+            <div class="sub" id="sub"></div>
+            <div class="chips" id="chips"></div>
+          </div>
+        </div>
+      </div>
+      <div class="panel"><h2>Evidence</h2><div class="sig" id="sig"></div></div>
+      <div class="panel">
+        <h2>Sentence heat map</h2>
+        <div class="strip" id="strip" aria-hidden="true"></div>
+        <div class="legend"><span>Human-like</span><i></i><span>AI-like</span></div>
+        <div class="hl" id="hl"></div>
+      </div>
+    </section>
+  </main>
+  <p class="note">This is a statistical estimate, not proof. Detectors, including commercial ones, produce false positives, especially on formal writing and on non-native English. Do not use a score as sole evidence of misconduct.</p>
+</div>
+<script>
+/* ---------- In-browser heuristic engine (mirrors ai_detector/detector.py) ---------- */
+const AI_PHRASES=["delve","tapestry","testament to","in today's","it is important to note","it's important to note","it is worth noting","plays a crucial role","plays a vital role","in conclusion","in summary","furthermore","moreover","additionally","overall,","landscape","multifaceted","leverage","foster","underscore","pivotal","navigate the","realm of","ever-evolving","rapidly evolving","holistic","seamless","robust","comprehensive","game-changer","shed light","a wide range of","not only","paramount","intricate","embark","unlock the"];
+const INFORMAL=["i ","i'm","i've","my ","lol","honestly","kinda","gonna","yeah","!","?","…","—","(","don't","can't","won't"];
+const clamp=(x,lo=0,hi=1)=>Math.max(lo,Math.min(hi,x));
+const mean=a=>a.reduce((s,x)=>s+x,0)/a.length;
+const pstdev=a=>{const m=mean(a);return Math.sqrt(mean(a.map(x=>(x-m)**2)))};
+const words=t=>(t.match(/[A-Za-z']+/g)||[]).map(w=>w.toLowerCase());
+const count=(h,n)=>h.split(n).length-1;
+function splitSentences(text){
+  const out=[];
+  for(const p of text.trim().split(/\n+/)){if(!p.trim())continue;
+    for(const s of p.trim().split(/(?<=[.!?])\s+(?=[A-Z0-9"'(])/))if(s.trim())out.push(s.trim());}
+  return out;}
+function burstiness(sents){
+  const lens=sents.map(s=>words(s).length).filter(n=>n>0);
+  if(lens.length<3)return .5;
+  return clamp(1-(pstdev(lens)/(mean(lens)||1)-.2)/.5);}
+function lexical(ws){
+  if(ws.length<30)return .5;
+  const chunks=[];for(let i=0;i<Math.max(1,ws.length-100+1);i+=50)chunks.push(ws.slice(i,i+100));
+  const ttr=mean(chunks.map(c=>new Set(c).size/c.length));
+  return clamp(1-Math.abs(ttr-.65)/.2)*.6;}
+function phrases(text,n){
+  const low=text.toLowerCase();let hits=0;for(const p of AI_PHRASES)hits+=count(low,p);
+  return [clamp(hits/Math.max(n,1)*100/3),hits];}
+function repetition(ws){
+  if(ws.length<40)return 0;
+  const tri=[];for(let i=0;i<ws.length-2;i++)tri.push(ws.slice(i,i+3).join(" "));
+  return clamp((tri.length-new Set(tri).size)/tri.length*8);}
+function informality(text){
+  const low=text.toLowerCase()+" ";let h=0;for(const m of INFORMAL)h+=count(low,m);
+  return clamp(h/Math.max(words(text).length,1)*100/6);}
+function sentScore(s){
+  const ws=words(s);if(ws.length<4)return .3;
+  const [p]=phrases(s,ws.length);
+  return clamp(.15+.45*p+.3*clamp(1-Math.abs(ws.length-22)/22)-.35*informality(s)+.2);}
+function labelFor(s){return s>=70?"Likely AI-generated":s>=40?"Possibly AI-assisted":"Likely human-written"}
+function localAnalyze(text){
+  const ws=words(text),sents=splitSentences(text);
+  if(ws.length<40)return{score:0,label:"Too short (need 40+ words)",signals:{},sentences:sents.map(s=>[s,0]),word_count:ws.length,engine:"browser"};
+  const b=burstiness(sents),l=lexical(ws),[ph,hits]=phrases(text,ws.length),r=repetition(ws),inf=informality(text);
+  const raw=.30*b+.15*l+.30*ph+.10*r+.15*(1-inf);
+  const score=Math.round(1000/(1+Math.exp(-9*(raw-.42))))/10;
+  return{score,label:labelFor(score),
+    signals:{uniform_sentence_length:b,lexical_profile:l,ai_phrase_density:ph,ngram_repetition:r,informality:inf,ai_phrase_hits:hits},
+    sentences:sents.map(s=>[s,Math.round(sentScore(s)*1000)/10]),word_count:ws.length,engine:"browser"};}
+
+/* ---------- Samples ---------- */
+const AI_SAMPLE="In today's rapidly evolving digital landscape, it is important to note that technology plays a crucial role in shaping society. Furthermore, artificial intelligence serves as a pivotal tool to foster innovation across a wide range of industries. Moreover, organizations must leverage robust and comprehensive solutions to navigate the multifaceted challenges of the modern era. In conclusion, the integration of these technologies is a testament to human ingenuity and will continue to underscore the importance of seamless collaboration.";
+const HUMAN_SAMPLE="I missed the bus again this morning. Honestly? Third time this week! So I walked, which took forever, and my shoes — the good ones, ugh — got soaked because of course it started pouring halfway there. When I finally showed up my boss just laughed. Can't say I blame him. Anyway, I'm gonna buy an umbrella today, lol, and maybe set two alarms instead of one because I clearly can't be trusted with just the one.";
+
+/* ---------- UI ---------- */
+const $=id=>document.getElementById(id);
+const esc=s=>s.replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+const SIG_LABELS={uniform_sentence_length:"Uniform sentence length",lexical_profile:"Typical vocabulary spread",ai_phrase_density:"Stock AI phrases",ngram_repetition:"Repeated phrasing",informality:"Informal voice (lowers score)"};
+const wc=t=>words(t).length;
+function tone(s){return s>=70?"var(--bad)":s>=40?"var(--mid)":"var(--ok)"}
+
+async function analyze(text){
+  try{
+    const r=await fetch("/analyze",{method:"POST",body:text});
+    if(r.ok&&(r.headers.get("content-type")||"").includes("json")){const j=await r.json();j.engine=j.engine||"server";return j;}
+  }catch(e){}
+  return localAnalyze(text);}
+
+function render(r){
+  $("engine").textContent=r.engine==="browser"?"In-browser heuristic engine":"Language model + heuristics";
+  const c=tone(r.score);
+  $("arc").setAttribute("stroke",c);$("arc").setAttribute("stroke-dasharray",`${r.score} 100`);
+  $("gnum").textContent=Math.round(r.score)+"%";
+  $("label").textContent=r.label;$("label").style.color=c;
+  $("sub").textContent=r.word_count<40?"Add more text for a reliable estimate.":`Estimated likelihood that this ${r.word_count}-word text is AI-generated.`;
+  const s=r.signals||{};
+  $("chips").innerHTML=[["perplexity","Perplexity"],["top10_token_share","Top-10 tokens"],["sentence_ppl_spread","Spread"],["ai_phrase_hits","AI phrases"]]
+    .filter(([k])=>k in s).map(([k,n])=>`<span class="chip">${n} <b>${s[k]}</b></span>`).join("");
+  const rows=Object.keys(SIG_LABELS).filter(k=>k in s).map(k=>{
+    const v=k==="informality"?1-s[k]:s[k];
+    return `<div class="r"><span>${SIG_LABELS[k]}</span><span class="tr"><i style="width:${(v*100).toFixed(0)}%"></i></span><span class="v">${v.toFixed(2)}</span></div>`;});
+  $("sig").innerHTML=rows.join("")||'<span class="empty">No signals yet. Paste 40 or more words.</span>';
+  $("strip").innerHTML=r.sentences.map(([t,sc])=>`<i title="${sc}%" style="--a:${clamp(sc/100).toFixed(2)}"></i>`).join("");
+  $("hl").innerHTML=r.sentences.map(([t,sc])=>`<span title="${sc}% AI-like" style="--a:${clamp((sc-35)/65).toFixed(2)}">${esc(t)}</span>`).join(" ")||'<span class="empty">Nothing to show.</span>';
+}
+async function run(){const t=$("in").value;$("count").textContent=wc(t)+" words";render(await analyze(t));}
+$("go").onclick=run;
+$("s1").onclick=()=>{$("in").value=AI_SAMPLE;run();};
+$("s2").onclick=()=>{$("in").value=HUMAN_SAMPLE;run();};
+$("in").addEventListener("input",()=>{$("count").textContent=wc($("in").value)+" words"});
+$("in").value=AI_SAMPLE;run();
+</script>

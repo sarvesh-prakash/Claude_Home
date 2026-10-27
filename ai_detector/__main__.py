@@ -1,6 +1,6 @@
 """CLI: python -m ai_detector [file|-]   |   python -m ai_detector --serve [port]"""
 import sys
-from .detector import analyze
+from .server import analyze
 
 def main(argv):
     if argv and argv[0] == "--serve":
